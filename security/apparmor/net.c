@@ -31,6 +31,7 @@ struct aa_sfs_entry aa_sfs_entry_network[] = {
 
 struct aa_sfs_entry aa_sfs_entry_network_compat[] = {
 	AA_SFS_FILE_STRING("af_mask",	AA_SFS_AF_MASK),
+	AA_SFS_FILE_BOOLEAN("af_unix",	1),
 	{ }
 };
 

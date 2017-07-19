@@ -26,6 +26,7 @@
 #include <net/af_unix.h>
 #include <net/sock.h>
 
+#include "include/af_unix.h"
 #include "include/apparmor.h"
 #include "include/apparmorfs.h"
 #include "include/audit.h"
@@ -801,7 +802,7 @@ static void apparmor_sk_clone_security(const struct sock *sk,
 
 	new->label = aa_get_label(ctx->label);
 	new->peer = aa_get_label(ctx->peer);
-		new->path = ctx->path;
+	new->path = ctx->path;
 	path_get(&new->path);
 }
 
@@ -1133,25 +1134,24 @@ static struct aa_label *sk_peer_label(struct sock *sk)
 {
 	struct sock *peer_sk;
 	struct aa_sk_ctx *ctx = SK_CTX(sk);
-	struct aa_label *label = ERR_PTR(-ENOPROTOOPT);
 
 	if (ctx->peer)
-		return aa_get_label(ctx->peer);
+		return ctx->peer;
+
 	if (sk->sk_family != PF_UNIX)
 		return ERR_PTR(-ENOPROTOOPT);
 
 	/* check for sockpair peering which does not go through
 	 * security_unix_stream_connect
 	 */
-	peer_sk = unix_peer_get(sk);
+	peer_sk = unix_peer(sk);
 	if (peer_sk) {
 		ctx = SK_CTX(peer_sk);
 		if (ctx->label)
-			label = aa_get_label(ctx->label);
-		sock_put(peer_sk);
+			return ctx->label;
 	}
 
-	return label;
+	return ERR_PTR(-ENOPROTOOPT);
 }
 
 /**
