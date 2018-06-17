@@ -301,13 +301,13 @@ static bool unpack_u16(struct aa_ext *e, u16 *data, const char *name)
 {
 	if (unpack_nameX(e, AA_U16, name)) {
 		if (!inbounds(e, sizeof(u16)))
-			return false;
+			return 0;
 		if (data)
 			*data = le16_to_cpu(get_unaligned((__le16 *) e->pos));
 		e->pos += sizeof(u16);
-		return true;
+		return 1;
 	}
-	return false;
+	return 0;
 }
 
 static bool unpack_u32(struct aa_ext *e, u32 *data, const char *name)

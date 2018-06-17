@@ -29,6 +29,11 @@ struct aa_sfs_entry aa_sfs_entry_network[] = {
 	{ }
 };
 
+struct aa_sfs_entry aa_sfs_entry_network_compat[] = {
+	AA_SFS_FILE_STRING("af_mask",	AA_SFS_AF_MASK),
+	{ }
+};
+
 static const char * const net_mask_names[] = {
 	"unknown",
 	"send",
