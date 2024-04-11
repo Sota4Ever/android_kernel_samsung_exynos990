@@ -785,6 +785,7 @@ static void apparmor_sk_free_security(struct sock *sk)
 	SK_CTX(sk) = NULL;
 	aa_put_label(ctx->label);
 	aa_put_label(ctx->peer);
+
 	kfree(ctx);
 }
 
@@ -1036,12 +1037,27 @@ static int apparmor_socket_sock_rcv_skb(struct sock *sk, struct sk_buff *skb)
 
 static struct aa_label *sk_peer_label(struct sock *sk)
 {
+	struct sock *peer_sk;
 	struct aa_sk_ctx *ctx = SK_CTX(sk);
+        struct aa_label *label = ERR_PTR(-ENOPROTOOPT);
 
 	if (ctx->peer)
-		return ctx->peer;
+		return aa_get_label(ctx->peer);
 
 	return ERR_PTR(-ENOPROTOOPT);
+
+       /* check for sockpair peering which does not go through
+	 * security_unix_stream_connect
+	 */
+	peer_sk = unix_peer_get(sk);
+	if (peer_sk) {
+		ctx = SK_CTX(peer_sk);
+		if (ctx->label)
+			label = aa_get_label(ctx->label);
+		sock_put(peer_sk);
+	}
+
+	return label;
 }
 
 /**
