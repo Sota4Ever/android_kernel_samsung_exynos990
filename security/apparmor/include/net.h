@@ -53,6 +53,7 @@
 struct aa_sk_ctx {
 	struct aa_label *label;
 	struct aa_label *peer;
+        struct path path;
 };
 
 #define SK_CTX(X) ((X)->sk_security)
@@ -77,6 +78,9 @@ struct aa_sk_ctx {
 ({						\
 	int __e;				\
 	switch ((FAMILY)) {			\
+        case AF_UNIX:				\
+		__e = aa_unix_ ## FN;		\
+		break;
 	default:				\
 		__e = DEF_FN;			\
 	}					\
