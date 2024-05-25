@@ -4594,7 +4594,6 @@ static ssize_t mask_brightness_store(struct device *dev,
 
 	panel_bl->props.mask_layer_br_target = value;
 
-	struct mask_layer_data req_data;
 	memset(&req_data, 0, sizeof(req_data));
 	req_data.req_mask_layer = value > 0 ? MASK_LAYER_ON : MASK_LAYER_OFF;
 	req_data.trigger_time = MASK_LAYER_TRIGGER_BEFORE;
