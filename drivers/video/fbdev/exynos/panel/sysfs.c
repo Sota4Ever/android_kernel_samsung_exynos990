@@ -4569,6 +4569,7 @@ static ssize_t mask_brightness_store(struct device *dev,
 	struct panel_info *panel_data;
 	struct panel_device *panel = dev_get_drvdata(dev);
 	struct panel_bl_device *panel_bl;
+	struct mask_layer_data req_data;
 	int value, rc;
 
 	rc = kstrtouint(buf, 0, &value);

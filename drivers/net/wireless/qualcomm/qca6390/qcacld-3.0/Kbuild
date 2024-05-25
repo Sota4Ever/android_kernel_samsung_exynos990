@@ -6,6 +6,8 @@ else
 	KERNEL_BUILD := n
 endif
 
+TARGET_BUILD_VARIANT := user
+
 ifeq ($(KERNEL_BUILD), y)
 	# These are provided in external module based builds
 	# Need to explicitly define for Kernel-based builds
@@ -2397,7 +2399,6 @@ cppflags-$(CONFIG_WLAN_TX_FLOW_CONTROL_LEGACY) += -DQCA_LL_LEGACY_TX_FLOW_CONTRO
 cppflags-$(CONFIG_WLAN_PDEV_TX_FLOW_CONTROL) += -DQCA_LL_PDEV_TX_FLOW_CONTROL
 
 ifeq ($(BUILD_DEBUG_VERSION), y)
-cppflags-y +=	-DWLAN_DEBUG
 ifeq ($(CONFIG_TRACE_RECORD_FEATURE), y)
 cppflags-y +=	-DTRACE_RECORD \
 		-DLIM_TRACE_RECORD \

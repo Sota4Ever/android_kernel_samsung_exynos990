@@ -659,13 +659,12 @@ int initialize_magnetic_sensor(struct ssp_data *data)
 	}
 */
 
-    for(i = 0;  i < mag_manager.size; i++)
-        ((mag *)mag_manager.item[i])->initialize(data);
+	for(i = 0;  i < mag_manager.size; i++)
+		((mag *)mag_manager.item[i])->initialize(data);
     
 	ret = set_magnetic_cal_param_to_ssp(data);
-	if (ret < 0)
-		pr_err("[SSP]: %s - set_magnetic_static_matrix failed %d\n", __func__, ret);
-
+		if (ret < 0)
+			pr_err("[SSP]: %s - set_magnetic_static_matrix failed %d\n", __func__, ret);
 	return ret < 0 ? ret : SUCCESS;
 }
 

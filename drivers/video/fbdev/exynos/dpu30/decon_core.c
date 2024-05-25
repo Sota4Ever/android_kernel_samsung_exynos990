@@ -58,7 +58,8 @@
 
 #include "../../../../iommu/exynos-iommu.h"
 
-
+#define DECON_4K_RESOLUTION_HEIGHT 3200
+#define DECON_4K_RESOLUTION_WIDTH  1440
 
 int decon_log_level = 6;
 module_param(decon_log_level, int, 0644);
@@ -1704,11 +1705,11 @@ static unsigned int decon_map_ion_handle(struct decon_device *decon,
 		struct device *dev, struct decon_dma_buf_data *dma,
 		struct dma_buf *buf, int win_no)
 {
-//debug DMA_BUF
+#ifdef DEBUG_DMA_BUF_LEAK
 	struct dma_buf_attachment *attach_obj;
 	struct dma_buf *dma_buf;
 	int attach_count = 0;
-//for debug
+#endif
 #if defined(CONFIG_EXYNOS_IOVMM)
 	struct exynos_iovmm *vmm;
 #endif
@@ -1779,11 +1780,11 @@ static unsigned int decon_map_ion_handle(struct decon_device *decon,
 	if (IS_ERR_VALUE(dma->dma_addr)) {
 		decon_err("ion_iovmm_map() failed: %pa\n", &dma->dma_addr);
 		decon_err("remaining_frame : %d", atomic_read(&decon->up.remaining_frame));
-
+#ifdef DEBUG_DMA_BUF_LEAK
 		decon_info("attached count : %d\n", attach_count);
 		decon_info("leak cnt : %d\n", decon->leak_cnt);
 		print_dma_leak_info(decon);
-
+#endif
 		BUG();
 		goto err_iovmm_map;
 	}
@@ -2997,6 +2998,15 @@ static void decon_update_fps(struct decon_device *decon,
 	decon_systrace(decon, 'B', "decon_update_fps", 0);
 }
 
+static void decon_update_resolution(struct decon_device *decon,
+			struct decon_reg_data *regs)
+{
+	decon_exit_hiber(decon);
+	decon_systrace(decon, 'B', "decon_update_resolution", 1);
+	dpu_update_mres_lcd_info(decon, regs);
+	dpu_set_mres_config(decon, regs);
+	decon_systrace(decon, 'B', "decon_update_resolution", 0);
+}
 
 #define GET_WINCONFIG_TIME(regs)	(ktime_to_us(ktime_sub(ktime_get(), regs->create_time)))
 
@@ -4131,6 +4141,66 @@ end:
 	return ret;
 }
 
+static int decon_get_vsync_change_timeline(struct decon_device *decon,
+		struct vsync_applied_time_data *vsync_time)
+{
+	struct exynos_panel_info *lcd_info = decon->lcd_info;
+	u64 last_vsync, cur_nsec, next_vsync;
+	u64 vsync_period;
+	u32 frames;
+	int ret = 0;
+
+	decon_dbg("%s +\n", __func__);
+	mutex_lock(&decon->lock);
+
+	if (!decon->mres_enabled) {
+		decon_warn("MRES is not enabled\n");
+		/* EPERM(1) : Operation not permitted */
+		ret = -EPERM;
+		goto end;
+	}
+
+	if (vsync_time->config >= lcd_info->display_mode_count){
+		decon_err("requested configId(%d) is out of range!\n", vsync_time->config);
+		ret = -EINVAL;
+		goto end;
+	}
+
+	if (vsync_time->config == lcd_info->cur_mode_idx &&
+		((vsync_time->reserved[0] & 0xF) == lcd_info->vrr_mode)) {
+		decon_warn("requested configId(%d) & vrr mode(%d) is same as current one\n",
+				vsync_time->config, vsync_time->reserved[0]);
+		ret = -EINVAL;
+		goto end;
+	}
+
+	vsync_period = 1000000000UL / lcd_info->fps;
+
+	last_vsync = ktime_to_ns(decon->vsync.timestamp);
+	cur_nsec = ktime_to_ns(ktime_get());
+
+	if (cur_nsec <= last_vsync)
+		next_vsync = last_vsync;
+	else {
+		next_vsync = last_vsync +
+				(cur_nsec - last_vsync) / vsync_period * vsync_period;
+	}
+
+	frames = atomic_read(&decon->up.remaining_frame);
+	if (frames > 0)
+		frames--;
+	vsync_time->time = max(cur_nsec, next_vsync + frames * vsync_period);
+
+	decon_dbg("EXYNOS_GET_VSYNC_CHANGE_TIMELINE: config(%d) => time(%llu)\n",
+				vsync_time->config, vsync_time->time);
+
+end:
+	mutex_unlock(&decon->lock);
+	decon_dbg("%s -\n", __func__);
+
+	return ret;
+}
+
 static int decon_ioctl(struct fb_info *info, unsigned int cmd,
 			unsigned long arg)
 {
@@ -4166,6 +4236,7 @@ static int decon_ioctl(struct fb_info *info, unsigned int cmd,
 	int i;
 	u32 cm_num;
 	u32 color;
+	struct vsync_applied_time_data vsync_time;
 
 	decon_hiber_block_exit(decon);
 	switch (cmd) {
@@ -4539,6 +4610,7 @@ static int decon_ioctl(struct fb_info *info, unsigned int cmd,
 		}
 		break;
 
+	case EXYNOS_GET_DISPLAY_MODE_OLD:
 	case EXYNOS_GET_DISPLAY_MODE:
 		if (copy_from_user(&display_mode,
 				   (void __user *)arg,
@@ -4556,10 +4628,9 @@ static int decon_ioctl(struct fb_info *info, unsigned int cmd,
 
 		mode = &lcd_info->display_mode[display_mode.index].mode;
 		memcpy(&display_mode, mode, sizeof(display_mode));
-
-		decon_info("display mode[%d] : %dx%d@%d(%dx%dmm)\n",
+		decon_info("display mode[%d] : %dx%d@%d(%dx%dmm) group: %d\n",
 				display_mode.index, mode->width, mode->height,
-				mode->fps, mode->mm_width, mode->mm_height);
+				mode->fps, mode->mm_width, mode->mm_height, mode->group);
 
 		if (copy_to_user((void __user *)arg,
 					&display_mode, _IOC_SIZE(cmd))) {
@@ -4593,23 +4664,47 @@ static int decon_ioctl(struct fb_info *info, unsigned int cmd,
 			decon_regs.lcd_width = mode->width;
 			decon_regs.lcd_height = mode->height;
 			decon_regs.mode_idx = display_mode.index;
-			decon_regs.vrr_config.fps = mode->fps;
-			if (display_mode.index == 0 || display_mode.index == 1 ||
-				display_mode.index == 5 || display_mode.index == 6 ||
-				display_mode.index == 10 || display_mode.index == 11 ) {
-				decon_regs.vrr_config.mode = DECON_WIN_STATE_VRR_NORMALMODE;
+			decon_regs.vrr_config.mode = DECON_WIN_STATE_VRR_NORMALMODE;
+			
+			if (lcd_info->display_mode[display_mode.index].mode.width == DECON_4K_RESOLUTION_WIDTH ||
+			     lcd_info->display_mode[display_mode.index].mode.height == DECON_4K_RESOLUTION_HEIGHT) {
+				/* 
+				 * QHD+ resolution just supports normal mode on all known exynos9830 devices. So
+				 * this path is taken unconditionally when a QHD+ resolution is requested.
+				 */
+				decon_regs.vrr_config.fps = mode->fps;
+				decon_update_resolution(decon, &decon_regs);
+			} else if (((lcd_info->display_mode[lcd_info->cur_mode_idx].mode.width != lcd_info->display_mode[display_mode.index].mode.width) ||
+			(lcd_info->display_mode[lcd_info->cur_mode_idx].mode.height != lcd_info->display_mode[display_mode.index].mode.height))) {
+				/* 
+				 * If we are here, means that a resolution change has been requested.
+				 * First switch to 60 FPS normal mode, then switch to the resolution
+				 * requested by the user. This path is taken when switching from QHD+
+				 * resolution to FHD/HD resolution, or switching between FHD and HD
+				 * (this last option however is not supported on AOSP).
+				 */
+				decon_regs.vrr_config.fps = 60; /* Request 60 fps first */
+				/* Switch to 60 normal mode before performing the resolution change */
+				decon_update_fps(decon, &decon_regs);
+				/* Perform resolution switch*/
+				decon_update_resolution(decon, &decon_regs);
+				/* Swith to user requested fps. */
+				decon_regs.vrr_config.fps = mode->fps;
+				if (mode->fps > 60) {
+					decon_regs.vrr_config.mode = DECON_WIN_STATE_VRR_HSMODE;
+				}
+				decon_update_fps(decon, &decon_regs);
 			} else {
-				decon_regs.vrr_config.mode = DECON_WIN_STATE_VRR_HSMODE;
+				/* 
+				 * Just FPS change has been requested. This path is taken just on
+				 * FHD/HD resolution which supports multiple FPS.
+				 */
+				decon_regs.vrr_config.fps = mode->fps;
+				if (mode->fps > 60) {
+					decon_regs.vrr_config.mode = DECON_WIN_STATE_VRR_HSMODE;
+				}
+				decon_update_fps(decon, &decon_regs);
 			}
-			/* Update LCD infos in decon regs for MRES */
-			dpu_update_mres_lcd_info(decon, &decon_regs);
-			/* apply multi-resolution configuration */
-			dpu_set_mres_config(decon, &decon_regs);
-			/* Update LCD infos in decon regs for VRR */
-			dpu_update_vrr_lcd_info(decon, &decon_regs.vrr_config);
-			/* Apply VRR configuration */
-			dpu_set_vrr_config(decon, &decon_regs.vrr_config);
-
 		}
 		break;
 #endif
@@ -4619,6 +4714,25 @@ static int decon_ioctl(struct fb_info *info, unsigned int cmd,
 			ret = -EFAULT;
 		decon_dbg("EXYNOS_GET_DISPLAY_CURRENT_MODE: current index(%d)\n",
 					lcd_info->cur_mode_idx);
+		break;
+
+	case EXYNOS_GET_VSYNC_CHANGE_TIMELINE:
+		if (copy_from_user(&vsync_time,
+				   (struct exynos_display_mode __user *)arg,
+				   sizeof(vsync_time))) {
+			ret = -EFAULT;
+			break;
+		}
+
+		ret = decon_get_vsync_change_timeline(decon, &vsync_time);
+		if (ret)
+			break;
+
+		if (copy_to_user((struct vsync_applied_time_data __user *)arg,
+					&vsync_time, sizeof(vsync_time))) {
+			ret = -EFAULT;
+			break;
+		}
 		break;
 
 	default:

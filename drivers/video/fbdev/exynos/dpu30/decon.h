@@ -56,7 +56,7 @@
 #include <linux/sti/abc_common.h>
 #endif
 
-#define CONFIG_PROFILE_WINCONFIG	1
+/*#define CONFIG_PROFILE_WINCONFIG	1*/
 
 #define SUCCESS_EXYNOS_SMC	0
 
@@ -112,7 +112,7 @@ extern struct decon_bts_ops decon_bts_control;
 
 #define MAX_DSC_SLICE_CNT	4
 
-#define DEBUG_DMA_BUF_LEAK	1
+/*#define DEBUG_DMA_BUF_LEAK	1*/
 
 #if defined(CONFIG_EXYNOS_COMMON_PANEL)
 #define MIN_FRAME_DONE_ERR_CHECK_USEC (8000) /* 8ms */
@@ -1340,6 +1340,12 @@ struct dma_leak_info {
 };
 #endif
 
+struct vsync_applied_time_data {
+	u32 config;
+	u64 time;
+	u32 reserved[4];
+};
+
 struct decon_device {
 	int id;
 	enum decon_state state;
@@ -2191,12 +2197,17 @@ int _decon_enable(struct decon_device *decon, enum decon_state state);
 #ifdef CONFIG_EXYNOS_SET_ACTIVE
 /* Display Mode Support */
 #define EXYNOS_GET_DISPLAY_MODE_NUM	_IOW('F', 700, u32)
+#define EXYNOS_GET_DISPLAY_MODE_OLD		_IOW('F', 701, struct exynos_display_mode_old)
 #define EXYNOS_GET_DISPLAY_MODE		_IOW('F', 701, struct exynos_display_mode)
 #define EXYNOS_SET_DISPLAY_MODE		_IOW('F', 702, struct exynos_display_mode)
 #define EXYNOS_GET_DISPLAY_CURRENT_MODE _IOW('F', 705, u32)
 #endif
 /* EDID data */
 #define EXYNOS_GET_EDID		_IOW('F', 800, struct decon_edid_data)
+
+/* For HWC2.4 */
+#define EXYNOS_GET_VSYNC_CHANGE_TIMELINE	_IOW('F', 850, struct vsync_applied_time_data)
+
 #if defined(CONFIG_EXYNOS_COMMON_PANEL)
 #define V4L2_EVENT_DECON                (V4L2_EVENT_PRIVATE_START + 1000)
 #define V4L2_EVENT_DECON_FRAME_START    (V4L2_EVENT_DECON + 1)
